@@ -7,7 +7,7 @@ class Config:
     API_KEY = os.getenv("API_KEY", "test_api_key_12345")
     HOST = os.getenv("HOST", "0.0.0.0")
     PORT = int(os.getenv("PORT", 8001))
-    GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8000")
+    GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:3000")
     
     DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:123456@localhost:3306/session_service_test")
     
