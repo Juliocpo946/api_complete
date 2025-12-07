@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, JSON
+from sqlalchemy import Column, String, Integer, Boolean, DateTime
 from sqlalchemy.sql import func
 from src.infrastructure.persistence.database import Base
 

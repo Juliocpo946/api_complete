@@ -125,7 +125,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, activity_uui
                 
     except WebSocketDisconnect:
         print(f"\n{'='*60}")
-    print(f"[WEBSOCKET DESCONECTADO]")
+        print(f"[WEBSOCKET DESCONECTADO]")
         print(f"{'='*60}")
         print(f"Connection Key: {connection_key}")
         print(f"{'='*60}\n")
