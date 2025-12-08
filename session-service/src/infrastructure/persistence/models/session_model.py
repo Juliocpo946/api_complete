@@ -14,7 +14,7 @@ class SessionModel(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
-    activities = relationship("ActivityModel", back_populates="session", cascade="all, delete-orphan")
+    user_activities = relationship("UserActivityModel", back_populates="session", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<SessionModel(session_id={self.session_id}, user_id={self.user_id}, status={self.status})>"

@@ -3,16 +3,14 @@ from datetime import datetime
 from typing import Dict, Optional
 
 @dataclass
-class Activity:
+class UserActivity:
     activity_uuid: str
     session_id: str
     external_activity_id: int
-    title: str
-    activity_type: str
     status: str = "in_progress"
+    pause_count: int = 0
     started_at: str = field(default_factory=lambda: datetime.now().isoformat())
     completed_at: Optional[str] = None
-    pause_count: int = 0
     
     def complete(self):
         self.status = "completed"
@@ -33,8 +31,6 @@ class Activity:
             "activity_uuid": self.activity_uuid,
             "session_id": self.session_id,
             "external_activity_id": self.external_activity_id,
-            "title": self.title,
-            "activity_type": self.activity_type,
             "status": self.status,
             "started_at": self.started_at,
             "completed_at": self.completed_at,

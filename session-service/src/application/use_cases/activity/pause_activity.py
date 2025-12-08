@@ -1,20 +1,20 @@
 from datetime import datetime
-from src.domain.repositories.activity_repository import ActivityRepository
+from src.domain.repositories.user_activity_repository import UserActivityRepository
 from src.domain.repositories.pause_counter_repository import PauseCounterRepository
 
 class PauseActivityUseCase:
     
-    def __init__(self, activity_repo: ActivityRepository, pause_counter_repo: PauseCounterRepository):
-        self.activity_repo = activity_repo
+    def __init__(self, user_activity_repo: UserActivityRepository, pause_counter_repo: PauseCounterRepository):
+        self.user_activity_repo = user_activity_repo
         self.pause_counter_repo = pause_counter_repo
     
     def execute(self, activity_uuid: str) -> dict:
-        activity = self.activity_repo.get_by_uuid(activity_uuid)
-        if not activity:
+        user_activity = self.user_activity_repo.get_by_uuid(activity_uuid)
+        if not user_activity:
             return {"error": "Actividad no encontrada"}
         
-        activity.pause()
-        self.activity_repo.update(activity)
+        user_activity.pause()
+        self.user_activity_repo.update(user_activity)
         
         pause_counter = self.pause_counter_repo.increment(
             activity_uuid,

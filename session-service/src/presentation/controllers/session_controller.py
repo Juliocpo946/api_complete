@@ -5,13 +5,15 @@ from src.application.use_cases.session.pause_session import PauseSessionUseCase
 from src.application.use_cases.session.resume_session import ResumeSessionUseCase
 from src.application.use_cases.session.finalize_session import FinalizeSessionUseCase
 from src.infrastructure.persistence.repositories.session_repository_impl import SessionRepositoryImpl
+from src.infrastructure.persistence.repositories.user_repository_impl import UserRepositoryImpl
 
 class SessionController:
     
     @staticmethod
     def create_session(request: CreateSessionRequest, db: Session) -> dict:
         session_repo = SessionRepositoryImpl(db)
-        use_case = CreateSessionUseCase(session_repo)
+        user_repo = UserRepositoryImpl(db)
+        use_case = CreateSessionUseCase(session_repo, user_repo)
         return use_case.execute(request.user_id, request.disability_type, request.cognitive_analysis_enabled)
     
     @staticmethod

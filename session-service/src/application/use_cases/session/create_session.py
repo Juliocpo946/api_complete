@@ -1,13 +1,17 @@
 from datetime import datetime
 from src.domain.entities.session import Session
 from src.domain.repositories.session_repository import SessionRepository
+from src.domain.repositories.user_repository import UserRepository
 
 class CreateSessionUseCase:
     
-    def __init__(self, session_repo: SessionRepository):
+    def __init__(self, session_repo: SessionRepository, user_repo: UserRepository):
         self.session_repo = session_repo
+        self.user_repo = user_repo
     
     def execute(self, user_id: int, disability_type: str, cognitive_enabled: bool) -> dict:
+        user = self.user_repo.get_by_id(user_id)
+        
         session_id = f"sess_{datetime.now().timestamp()}"
         session = Session(
             session_id=session_id,
