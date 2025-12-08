@@ -9,7 +9,9 @@ class WebSocketManager:
     @staticmethod
     def add_connection(connection_key: str, websocket: WebSocket):
         active_connections[connection_key] = websocket
-        session_id, activity_uuid = connection_key.split("_")
+        parts = connection_key.split("_")
+        session_id = "_".join(parts[:2])
+        activity_uuid = "_".join(parts[2:])
         active_activities[activity_uuid] = {
             "session_id": session_id,
             "activity_uuid": activity_uuid,
@@ -21,8 +23,9 @@ class WebSocketManager:
         if connection_key in active_connections:
             del active_connections[connection_key]
         
-        if "_" in connection_key:
-            _, activity_uuid = connection_key.split("_")
+        parts = connection_key.split("_")
+        if len(parts) >= 4:
+            activity_uuid = "_".join(parts[2:])
             if activity_uuid in active_activities:
                 del active_activities[activity_uuid]
     
