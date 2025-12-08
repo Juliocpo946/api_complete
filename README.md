@@ -9,7 +9,7 @@
 ### 1. Gateway
 ```bash
 python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -17,7 +17,7 @@ pip install -r requirements.txt
 ```bash
 cd session-service
 python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+venv\Scripts\activate
 pip install -r requirements.txt
 cd ..
 ```
@@ -45,20 +45,20 @@ CREATE DATABASE monitoring_service_test;
 ```bash
 cd session-service
 source venv/bin/activate
-python main.py
+uvicorn main:app --host 0.0.0.0 --port 3001
 ```
 
 ### Terminal 2 - Monitoring Service
 ```bash
 cd monitoring-service
 source venv/bin/activate
-python main.py
+uvicorn main:app --host 0.0.0.0 --port 3002
 ```
 
 ### Terminal 3 - Gateway
 ```bash
 source venv/bin/activate
-python gateway.py
+uvicorn main:app --host 0.0.0.0 --port 3000
 ```
 
 ## URLs de Acceso
