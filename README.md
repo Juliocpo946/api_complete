@@ -26,7 +26,7 @@ cd ..
 ```bash
 cd monitoring-service
 python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+venv\Scripts\activate
 pip install -r requirements.txt
 cd ..
 ```
@@ -44,20 +44,21 @@ CREATE DATABASE monitoring_service_test;
 ### Terminal 1 - Session Service
 ```bash
 cd session-service
-source venv/bin/activate
+venv\Scripts\activate
 uvicorn main:app --host 0.0.0.0 --port 3001
 ```
 
 ### Terminal 2 - Monitoring Service
 ```bash
 cd monitoring-service
-source venv/bin/activate
+venv\Scripts\activate
 uvicorn main:app --host 0.0.0.0 --port 3002
 ```
 
 ### Terminal 3 - Gateway
 ```bash
-source venv/bin/activate
+venv\Scripts\activate
+venv\Scripts\activate
 uvicorn main:app --host 0.0.0.0 --port 3000
 ```
 
