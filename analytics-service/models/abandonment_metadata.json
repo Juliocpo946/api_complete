@@ -1,0 +1,31 @@
+{
+  "model_type": "Random Forest",
+  "features": [
+    "historical_completion_rate",
+    "historical_abandonment_rate",
+    "historical_avg_pause_count",
+    "historical_avg_duration",
+    "difficulty_level",
+    "activity_abandonment_rate",
+    "avg_pauses_activity",
+    "hour_of_day",
+    "day_of_week",
+    "days_since_last_activity",
+    "avg_days_between_sessions",
+    "current_pause_count",
+    "cluster_completion_rate",
+    "cluster_abandonment_rate",
+    "avg_frustration",
+    "avg_visual_fatigue",
+    "distraction_events_per_hour"
+  ],
+  "n_features": 17,
+  "metrics": {
+    "roc_auc": 0.6722505198873359,
+    "f1_score": 0.5249088699878494,
+    "precision": 0.5130641330166271,
+    "recall": 0.5373134328358209
+  },
+  "trained_on": "2025-12-09T09:13:55.286245",
+  "target": "abandoned"
+}

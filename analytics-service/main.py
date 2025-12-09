@@ -7,7 +7,7 @@ import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
-from src.routes import clustering_routes, training_routes
+from src.routes import clustering_routes, training_routes, forecasting_routes
 from src.config.config import config
 
 load_dotenv()
@@ -44,6 +44,7 @@ async def health():
 
 app.include_router(clustering_routes.router)
 app.include_router(training_routes.router)
+app.include_router(forecasting_routes.router)
 
 if __name__ == "__main__":
     print("\n" + "="*60)
