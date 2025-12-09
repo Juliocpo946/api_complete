@@ -54,6 +54,12 @@ cd monitoring-service
 venv\Scripts\activate
 uvicorn main:app --host 0.0.0.0 --port 3002
 ```
+### Terminal 3 - Analytics Service
+```bash
+venv\Scripts\activate
+venv\Scripts\activate
+uvicorn main:app --host 0.0.0.0 --port 3003
+```
 
 ### Terminal 3 - Gateway
 ```bash
