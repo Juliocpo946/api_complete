@@ -1,5 +1,6 @@
 import pymysql
 import random
+import json
 from datetime import datetime, timedelta
 from database_connection import get_connection
 
@@ -8,10 +9,9 @@ def generate_fake_sessions_and_activities():
     
     try:
         with connection.cursor() as cursor:
-            # Definir clusters y sus características
             clusters = {
                 'rapido_visual': {
-                    'users': list(range(1001, 1026)),  # 25 usuarios (25%)
+                    'users': list(range(1001, 1026)),
                     'completion_rate': (0.75, 0.90),
                     'avg_frustration': (0.2, 0.4),
                     'distraction_rate': (1, 3),
@@ -20,7 +20,7 @@ def generate_fake_sessions_and_activities():
                     'activities_per_session': (5, 8)
                 },
                 'lector_constante': {
-                    'users': list(range(1026, 1056)),  # 30 usuarios (30%)
+                    'users': list(range(1026, 1056)),
                     'completion_rate': (0.60, 0.80),
                     'avg_frustration': (0.4, 0.7),
                     'distraction_rate': (3, 6),
@@ -29,7 +29,7 @@ def generate_fake_sessions_and_activities():
                     'activities_per_session': (4, 7)
                 },
                 'disperso_visual': {
-                    'users': list(range(1056, 1086)),  # 30 usuarios (30%)
+                    'users': list(range(1056, 1086)),
                     'completion_rate': (0.30, 0.50),
                     'avg_frustration': (0.6, 0.85),
                     'distraction_rate': (8, 15),
@@ -38,7 +38,7 @@ def generate_fake_sessions_and_activities():
                     'activities_per_session': (3, 6)
                 },
                 'fatigado_visual': {
-                    'users': list(range(1086, 1101)),  # 15 usuarios (15%)
+                    'users': list(range(1086, 1101)),
                     'completion_rate': (0.40, 0.60),
                     'avg_frustration': (0.5, 0.75),
                     'distraction_rate': (4, 8),
@@ -64,18 +64,13 @@ def generate_fake_sessions_and_activities():
                         session_id = f"sess_{user_id}_{session_counter}"
                         session_counter += 1
                         
-                        # Insertar sesión
                         cursor.execute(
-                            "USE session_service_test"
-                        )
-                        cursor.execute(
-                            """INSERT INTO sessions 
+                            """INSERT INTO session_service_test.sessions 
                             (session_id, user_id, disability_type, cognitive_analysis_enabled, status, created_at, updated_at)
                             VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                             (session_id, user_id, 'auditiva', True, 'finalized', session_date, session_date)
                         )
                         
-                        # Generar actividades para esta sesión
                         num_activities = random.randint(*cluster_data['activities_per_session'])
                         selected_activities = random.sample(activities, min(num_activities, len(activities)))
                         
@@ -83,7 +78,6 @@ def generate_fake_sessions_and_activities():
                             activity_uuid = f"act_{user_id}_{activity_counter}"
                             activity_counter += 1
                             
-                            # Determinar si se completa o abandona según cluster
                             completion_prob = random.uniform(*cluster_data['completion_rate'])
                             is_completed = random.random() < completion_prob
                             
@@ -94,56 +88,61 @@ def generate_fake_sessions_and_activities():
                             activity_duration = random.randint(3, 20) if is_completed else random.randint(1, 8)
                             activity_end = activity_start + timedelta(minutes=activity_duration) if is_completed else None
                             
-                            # Insertar actividad
                             cursor.execute(
-                                """INSERT INTO user_activities 
+                                """INSERT INTO session_service_test.user_activities 
                                 (activity_uuid, session_id, external_activity_id, status, pause_count, started_at, completed_at, created_at, updated_at)
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                                 (activity_uuid, session_id, external_activity_id, status, pause_count, 
                                  activity_start, activity_end, activity_start, activity_end or activity_start)
                             )
                             
-                            # Insertar pause_counter
                             if pause_count > 0:
                                 pause_timestamps = []
                                 for p in range(pause_count):
                                     pause_time = activity_start + timedelta(minutes=random.randint(1, activity_duration))
                                     pause_timestamps.append(pause_time.isoformat())
                                 
+                                pause_timestamps_json = json.dumps(pause_timestamps)
+                                
                                 cursor.execute(
-                                    """INSERT INTO pause_counters 
+                                    """INSERT INTO session_service_test.pause_counters 
                                     (activity_uuid, pause_count, paused_timestamps, created_at, updated_at)
                                     VALUES (%s, %s, %s, %s, %s)""",
-                                    (activity_uuid, pause_count, str(pause_timestamps), activity_start, activity_start)
+                                    (activity_uuid, pause_count, pause_timestamps_json, activity_start, activity_start)
                                 )
                             
-                            # Generar minute_summaries y interventions
                             generate_monitoring_data(
                                 cursor, activity_uuid, session_id, activity_start, 
                                 activity_duration, cluster_data, is_completed
                             )
+                    
+                    if (user_id - cluster_data['users'][0] + 1) % 5 == 0:
+                        connection.commit()
+                        print(f"  Procesados {user_id - cluster_data['users'][0] + 1}/{len(cluster_data['users'])} usuarios")
             
             connection.commit()
-            print("Datos fake generados exitosamente")
+            print("\nDatos fake generados exitosamente")
+            print(f"Total sesiones: ~{session_counter}")
+            print(f"Total actividades: ~{activity_counter}")
             
+    except Exception as e:
+        connection.rollback()
+        print(f"Error: {e}")
+        raise
     finally:
         connection.close()
 
 def generate_monitoring_data(cursor, activity_uuid, session_id, start_time, duration_minutes, cluster_data, is_completed):
-    cursor.execute("USE monitoring_service_test")
-    
     emotions = ['Happy', 'Neutral', 'Sad', 'Angry', 'Surprise', 'Fear']
     engagement_levels = ['high', 'medium', 'low']
     
     frustration_base = random.uniform(*cluster_data['avg_frustration'])
     distraction_base = random.uniform(*cluster_data['distraction_rate'])
     
-    # Generar minute_summaries
     for minute in range(duration_minutes):
         summary_id = f"sum_{activity_uuid}_{minute}"
         timestamp = start_time + timedelta(minutes=minute)
         
-        # Simular progresión de frustración (aumenta con el tiempo si no completa)
         if not is_completed and minute > duration_minutes * 0.6:
             frustration = min(0.95, frustration_base + random.uniform(0.1, 0.3))
             predominant_emotion = 'Angry'
@@ -171,7 +170,7 @@ def generate_monitoring_data(cursor, activity_uuid, session_id, start_time, dura
         )[0]
         
         cursor.execute(
-            """INSERT INTO minute_summaries 
+            """INSERT INTO monitoring_service_test.minute_summaries 
             (summary_id, session_id, activity_uuid, minute_number, timestamp,
             predominant_emotion, emotion_confidence_avg, ear_avg, pitch_avg, yaw_avg,
             looking_screen_percentage, face_detected_percentage, distraction_count, 
@@ -183,13 +182,12 @@ def generate_monitoring_data(cursor, activity_uuid, session_id, start_time, dura
              0, cognitive_state, engagement_level, timestamp)
         )
     
-    # Generar intervenciones basadas en características del cluster
     num_interventions = random.randint(0, int(duration_minutes * 0.4))
     intervention_types = ['video_instruction', 'text_instruction', 'vibration_only', 'pause_suggestion']
     
     for i in range(num_interventions):
         packet_id = f"int_{activity_uuid}_{i}"
-        intervention_minute = random.randint(2, duration_minutes - 1)
+        intervention_minute = random.randint(2, max(2, duration_minutes - 1))
         intervention_time = start_time + timedelta(minutes=intervention_minute)
         
         if frustration_base > 0.7:
@@ -207,7 +205,7 @@ def generate_monitoring_data(cursor, activity_uuid, session_id, start_time, dura
         }
         
         cursor.execute(
-            """INSERT INTO interventions 
+            """INSERT INTO monitoring_service_test.interventions 
             (packet_id, session_id, activity_uuid, intervention_type, video_url, display_text,
             vibration_enabled, metric_name, metric_value, confidence, duration_ms, timestamp, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",

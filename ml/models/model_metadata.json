@@ -1,0 +1,25 @@
+{
+  "n_clusters": 4,
+  "features": [
+    "completion_rate",
+    "avg_frustration",
+    "avg_visual_attention",
+    "avg_visual_fatigue",
+    "distraction_events_per_hour",
+    "drowsiness_events_per_hour",
+    "avg_pause_count",
+    "intervention_count_per_activity",
+    "avg_engagement_score",
+    "preference_easy_activities"
+  ],
+  "silhouette_score": 0.48241686877915174,
+  "davies_bouldin_score": 0.4578171939343803,
+  "inertia": 280.35653168961954,
+  "cluster_distribution": {
+    "0": 54,
+    "1": 45,
+    "2": 1,
+    "3": 1
+  },
+  "trained_on": "2025-12-09T06:02:24.632986"
+}

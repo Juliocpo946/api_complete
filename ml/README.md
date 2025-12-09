@@ -29,8 +29,7 @@ analytics-ml/
 ```bash
 cd ml
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
+venv\Scripts\activate
 ```
 
 ### 2. Instalar dependencias
@@ -130,14 +129,3 @@ El modelo entrenado con datos reales reemplazará automáticamente al modelo fak
 - Silhouette Score: 0.45+ (buena separación)
 - Davies-Bouldin: <1.5 (clusters compactos)
 - K óptimo: 4 clusters
-
-## Próximos Pasos
-
-1. Integrar predicción en monitoring-service
-2. Ajustar umbrales de intervención por cluster
-3. Reentrenar modelo mensualmente con datos reales
-4. Validar mejoras en engagement y completion_rate
-
-## Soporte
-
-Para preguntas o issues, contactar al equipo de desarrollo.
