@@ -27,6 +27,7 @@ analytics-ml/
 
 ### 1. Crear entorno virtual
 ```bash
+cd ml
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
