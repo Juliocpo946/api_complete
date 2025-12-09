@@ -1,5 +1,6 @@
 from src.domain.repositories.user_activity_repository import UserActivityRepository
 from src.domain.repositories.pause_counter_repository import PauseCounterRepository
+from src.infrastructure.messaging.rabbitmq_publisher import RabbitMQPublisher
 
 class AbandonActivityUseCase:
     
@@ -23,6 +24,8 @@ class AbandonActivityUseCase:
         
         user_activity.abandon()
         self.user_activity_repo.update(user_activity)
+        
+        RabbitMQPublisher.publish_activity_abandoned(activity_uuid, user_activity.session_id)
         
         if pause_counter:
             self.pause_counter_repo.delete(activity_uuid)

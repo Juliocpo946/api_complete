@@ -1,6 +1,7 @@
 from datetime import datetime
 from src.domain.repositories.user_activity_repository import UserActivityRepository
 from src.domain.repositories.pause_counter_repository import PauseCounterRepository
+from src.infrastructure.messaging.rabbitmq_publisher import RabbitMQPublisher
 
 class PauseActivityUseCase:
     
@@ -21,7 +22,9 @@ class PauseActivityUseCase:
             datetime.now().isoformat()
         )
         
+        RabbitMQPublisher.publish_activity_paused(activity_uuid, user_activity.session_id)
+        
         pause_count = pause_counter.get_count()
-        print(f"\n[USE_CASE] Actividad pausada: {activity_uuid}\n")
+        print(f"\n[USE_CASE] Actividad pausada: {activity_uuid}")
         print(f"Total de pausas registradas en BD: {pause_count}\n")
         return {"status": "paused", "pause_count": pause_count}

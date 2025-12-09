@@ -1,14 +1,17 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from dotenv import load_dotenv
 import json
 import asyncio
+from sqlalchemy.orm import Session
 
 from src.infrastructure.config.config import config
-from src.infrastructure.persistence.database import init_db
+from src.infrastructure.persistence.database import init_db, get_db
 from src.infrastructure.messaging.websocket_manager import WebSocketManager
-from src.infrastructure.messaging.notification_sender import NotificationSender
+from src.application.services.emotion_analyzer_service import EmotionAnalyzerService
+from src.infrastructure.persistence.repositories.intervention_repository_impl import InterventionRepositoryImpl
+from src.infrastructure.persistence.repositories.minute_summary_repository_impl import MinuteSummaryRepositoryImpl
 
 load_dotenv()
 
@@ -39,8 +42,29 @@ async def root():
         "status": "activo"
     }
 
+async def minute_summary_task(activity_uuid: str, session_id: str, db: Session):
+    while WebSocketManager.is_active(activity_uuid):
+        await asyncio.sleep(60)
+        
+        if not WebSocketManager.is_active(activity_uuid):
+            break
+        
+        summary = EmotionAnalyzerService.generate_minute_summary(activity_uuid)
+        if summary:
+            summary_repo = MinuteSummaryRepositoryImpl(db)
+            summary_repo.save(summary)
+            print(f"\n[RESUMEN MINUTO] Actividad: {activity_uuid}, Minuto: {summary.minute_number}")
+            print(f"Emoción predominante: {summary.predominant_emotion}")
+            print(f"Nivel de engagement: {summary.engagement_level}")
+
 @app.websocket("/ws/{session_id}/{activity_uuid}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str, activity_uuid: str, api_key: str = None):
+async def websocket_endpoint(
+    websocket: WebSocket, 
+    session_id: str, 
+    activity_uuid: str, 
+    api_key: str = None,
+    db: Session = Depends(get_db)
+):
     if not api_key or api_key != config.API_KEY:
         await websocket.close(code=1008, reason="API key inválida")
         return
@@ -56,13 +80,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, activity_uui
     print(f"Connection Key: {connection_key}")
     print(f"{'='*60}\n")
     
-    notification_task = None
+    summary_task = None
     
     try:
         WebSocketManager.add_connection(connection_key, websocket)
+        EmotionAnalyzerService.initialize_activity(activity_uuid, session_id)
         
-        notification_task = asyncio.create_task(
-            NotificationSender.send_periodic_notifications(websocket, activity_uuid, session_id)
+        summary_task = asyncio.create_task(
+            minute_summary_task(activity_uuid, session_id, db)
         )
         
         while True:
@@ -84,44 +109,40 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, activity_uui
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
                 
+            elif msg_type == "pause":
+                EmotionAnalyzerService.pause_activity(activity_uuid)
+                print(f"\n[ACTIVIDAD PAUSADA] {activity_uuid}")
+                
+            elif msg_type == "resume":
+                EmotionAnalyzerService.resume_activity(activity_uuid)
+                print(f"\n[ACTIVIDAD REANUDADA] {activity_uuid}")
+                
             else:
-                print(f"\n{'='*60}")
-                print(f"[FRAME RECIBIDO]")
-                print(f"{'='*60}")
-                
                 metadata = message.get("metadata", {})
-                print(f"Timestamp: {metadata.get('timestamp')}")
-                print(f"ID Usuario: {metadata.get('user_id')}")
-                print(f"ID Sesión: {metadata.get('session_id')}")
-                print(f"ID Actividad Externa: {metadata.get('external_activity_id')}")
-                
-                print(f"\n--- ANÁLISIS DE SENTIMIENTO ---")
                 analisis = message.get("analisis_sentimiento", {})
-                emocion = analisis.get("emocion_principal", {})
-                print(f"Emoción: {emocion.get('nombre')}")
-                print(f"Confianza: {emocion.get('confianza'):.2f}")
-                print(f"Estado Cognitivo: {emocion.get('estado_cognitivo')}")
-                
-                desglose = analisis.get("desglose_emociones", [])
-                if desglose:
-                    print(f"\nDesglose de Emociones:")
-                    for emo in desglose[:3]:
-                        print(f"  - {emo.get('emocion')}: {emo.get('confianza'):.1f}%")
-                
-                print(f"\n--- DATOS BIOMÉTRICOS ---")
                 biometricos = message.get("datos_biometricos", {})
                 
-                atencion = biometricos.get("atencion", {})
-                print(f"Mirando Pantalla: {atencion.get('mirando_pantalla')}")
-                orientacion = atencion.get("orientacion_cabeza", {})
-                print(f"Orientación Cabeza - Pitch: {orientacion.get('pitch'):.2f}, Yaw: {orientacion.get('yaw'):.2f}")
+                intervention = EmotionAnalyzerService.process_frame(activity_uuid, message)
                 
-                somnolencia = biometricos.get("somnolencia", {})
-                print(f"Está Durmiendo: {somnolencia.get('esta_durmiendo')}")
-                print(f"Apertura Ojos (EAR): {somnolencia.get('apertura_ojos_ear'):.3f}")
-                
-                print(f"Rostro Detectado: {biometricos.get('rostro_detectado')}")
-                print(f"{'='*60}\n")
+                if intervention:
+                    intervention_repo = InterventionRepositoryImpl(db)
+                    intervention_repo.save(intervention)
+                    
+                    notification = intervention.to_dict()
+                    await websocket.send_json(notification)
+                    
+                    print(f"\n{'='*60}")
+                    print(f"[INTERVENCIÓN ENVIADA]")
+                    print(f"{'='*60}")
+                    print(f"Tipo: {intervention.intervention_type}")
+                    print(f"Métrica: {intervention.metric_name}")
+                    if intervention.display_text:
+                        print(f"Texto: {intervention.display_text}")
+                    if intervention.video_url:
+                        print(f"Video: {intervention.video_url}")
+                    if intervention.vibration_enabled:
+                        print(f"Vibración: Activada")
+                    print(f"{'='*60}\n")
                 
     except WebSocketDisconnect:
         print(f"\n{'='*60}")
@@ -137,8 +158,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, activity_uui
         print(f"Error: {e}")
         print(f"{'='*60}\n")
     finally:
-        if notification_task:
-            notification_task.cancel()
+        if summary_task:
+            summary_task.cancel()
+        
+        final_summary = EmotionAnalyzerService.generate_minute_summary(activity_uuid)
+        if final_summary:
+            summary_repo = MinuteSummaryRepositoryImpl(db)
+            summary_repo.save(final_summary)
+            print(f"\n[RESUMEN FINAL] Actividad: {activity_uuid}")
+        
+        EmotionAnalyzerService.finalize_activity(activity_uuid)
         WebSocketManager.remove_connection(connection_key)
 
 if __name__ == "__main__":

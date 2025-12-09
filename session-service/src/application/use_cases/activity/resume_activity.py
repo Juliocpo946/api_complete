@@ -1,5 +1,6 @@
 from src.domain.repositories.user_activity_repository import UserActivityRepository
 from src.application.services.pause_tracker_service import PauseTrackerService
+from src.infrastructure.messaging.rabbitmq_publisher import RabbitMQPublisher
 
 class ResumeActivityUseCase:
     
@@ -13,6 +14,8 @@ class ResumeActivityUseCase:
         
         user_activity.resume()
         self.user_activity_repo.update(user_activity)
+        
+        RabbitMQPublisher.publish_activity_resumed(activity_uuid, user_activity.session_id)
         
         pause_count = PauseTrackerService.get_pause_count(activity_uuid)
         print(f"\n[USE_CASE] Actividad reanudada: {activity_uuid}\n")
