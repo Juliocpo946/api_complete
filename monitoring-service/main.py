@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 from src.infrastructure.config.config import config
 from src.infrastructure.persistence.database import init_db, get_db
 from src.infrastructure.messaging.websocket_manager import WebSocketManager
+from src.infrastructure.messaging.rabbitmq_consumer import RabbitMQConsumer
 from src.application.services.emotion_analyzer_service import EmotionAnalyzerService
+from src.application.services.activity_event_handler import ActivityEventHandler
 from src.infrastructure.persistence.repositories.intervention_repository_impl import InterventionRepositoryImpl
 from src.infrastructure.persistence.repositories.minute_summary_repository_impl import MinuteSummaryRepositoryImpl
 
@@ -25,14 +27,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+rabbitmq_consumer = None
+
 @app.on_event("startup")
 async def startup_event():
+    global rabbitmq_consumer
+    
     init_db()
     print(f"\n{'='*60}")
     print(f"  MONITORING SERVICE - INICIADO")
     print(f"{'='*60}")
     print(f"  Base de datos: {config.DATABASE_URL}")
     print(f"{'='*60}\n")
+    
+    rabbitmq_consumer = RabbitMQConsumer(ActivityEventHandler.handle_event)
+    rabbitmq_consumer.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global rabbitmq_consumer
+    if rabbitmq_consumer:
+        rabbitmq_consumer.stop()
 
 @app.get("/")
 async def root():
@@ -108,14 +123,6 @@ async def websocket_endpoint(
                 
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
-                
-            elif msg_type == "pause":
-                EmotionAnalyzerService.pause_activity(activity_uuid)
-                print(f"\n[ACTIVIDAD PAUSADA] {activity_uuid}")
-                
-            elif msg_type == "resume":
-                EmotionAnalyzerService.resume_activity(activity_uuid)
-                print(f"\n[ACTIVIDAD REANUDADA] {activity_uuid}")
                 
             else:
                 metadata = message.get("metadata", {})

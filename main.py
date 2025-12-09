@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import os
 import asyncio
 import websockets
+import json
 
 load_dotenv()
 
@@ -160,38 +161,51 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, activity_uui
     monitoring_host = MONITORING_SERVICE_URL.replace("http://", "").replace("https://", "")
     monitoring_ws_url = f"ws://{monitoring_host}/ws/{session_id}/{activity_uuid}?api_key={API_KEY}"
     
+    monitoring_ws = None
+    
     try:
-        async with websockets.connect(monitoring_ws_url) as monitoring_ws:
-            await websocket.accept()
-            
-            async def forward_to_monitoring():
-                try:
-                    while True:
-                        data = await websocket.receive_text()
-                        await monitoring_ws.send(data)
-                except WebSocketDisconnect:
-                    pass
-                except Exception:
-                    pass
-            
-            async def forward_to_client():
-                try:
-                    async for message in monitoring_ws:
-                        await websocket.send_text(message)
-                except Exception:
-                    pass
-            
-            await asyncio.gather(
-                forward_to_monitoring(),
-                forward_to_client(),
-                return_exceptions=True
-            )
+        monitoring_ws = await websockets.connect(monitoring_ws_url)
+        await websocket.accept()
+        
+        print(f"\n[GATEWAY] WebSocket conectado: {session_id}/{activity_uuid}")
+        
+        async def forward_client_to_monitoring():
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    await monitoring_ws.send(data)
+                    print(f"[GATEWAY] Cliente → Monitoring: {data[:100]}")
+            except WebSocketDisconnect:
+                print("[GATEWAY] Cliente desconectado")
+            except Exception as e:
+                print(f"[GATEWAY] Error cliente→monitoring: {e}")
+        
+        async def forward_monitoring_to_client():
+            try:
+                async for message in monitoring_ws:
+                    await websocket.send_text(message)
+                    msg_data = json.loads(message)
+                    msg_type = msg_data.get("type", "unknown")
+                    print(f"[GATEWAY] Monitoring → Cliente: {msg_type}")
+            except Exception as e:
+                print(f"[GATEWAY] Error monitoring→cliente: {e}")
+        
+        await asyncio.gather(
+            forward_client_to_monitoring(),
+            forward_monitoring_to_client(),
+            return_exceptions=True
+        )
+        
     except Exception as e:
-        print(f"[2025-12-08 12:00:00] [GATEWAY] [ERROR] WebSocket connection failed: {e}")
+        print(f"[GATEWAY] Error WebSocket: {e}")
+    finally:
+        if monitoring_ws:
+            await monitoring_ws.close()
         try:
-            await websocket.close(code=1011)
+            await websocket.close()
         except:
             pass
+        print(f"[GATEWAY] WebSocket cerrado: {session_id}/{activity_uuid}")
 
 if __name__ == "__main__":
     HOST = os.getenv("HOST", "0.0.0.0")
