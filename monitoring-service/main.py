@@ -99,7 +99,18 @@ async def websocket_endpoint(
     
     try:
         WebSocketManager.add_connection(connection_key, websocket)
-        EmotionAnalyzerService.initialize_activity(activity_uuid, session_id)
+        
+        data = await websocket.receive_text()
+        message = json.loads(data)
+        
+        user_id = message.get("user_id")
+        
+        user_cluster = None
+        if user_id:
+            from src.infrastructure.external_services.analytics_client import AnalyticsClient
+            user_cluster = await AnalyticsClient.get_user_cluster(user_id)
+        
+        EmotionAnalyzerService.initialize_activity(activity_uuid, session_id, user_id, user_cluster)
         
         summary_task = asyncio.create_task(
             minute_summary_task(activity_uuid, session_id, db)
@@ -117,9 +128,11 @@ async def websocket_endpoint(
                 print(f"{'='*60}")
                 print(f"ID Usuario: {message.get('user_id')}")
                 print(f"ID Actividad Externa: {message.get('external_activity_id')}")
+                if user_cluster:
+                    print(f"Cluster: {user_cluster}")
                 print(f"{'='*60}\n")
                 
-                await websocket.send_json({"type": "handshake_ack"})
+                await websocket.send_json({"type": "handshake_ack", "cluster": user_cluster})
                 
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
@@ -176,7 +189,7 @@ async def websocket_endpoint(
         
         EmotionAnalyzerService.finalize_activity(activity_uuid)
         WebSocketManager.remove_connection(connection_key)
-
+        
 if __name__ == "__main__":
     print("\n" + "="*60)
     print("  MONITORING SERVICE")

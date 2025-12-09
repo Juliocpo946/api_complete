@@ -19,6 +19,8 @@ class FrameData:
 class EmotionState:
     activity_uuid: str
     session_id: str
+    user_id: int
+    user_cluster: Optional[str] = None
     activity_start_time: datetime = field(default_factory=datetime.now)
     frames: deque = field(default_factory=lambda: deque(maxlen=300))
     
@@ -91,3 +93,40 @@ class EmotionState:
             if last_time and last_time.timestamp() >= cutoff:
                 count += 1
         return count
+    
+    def get_thresholds(self) -> Dict[str, float]:
+        if self.user_cluster == "Rápido Visual":
+            return {
+                'distraction_threshold': 4,
+                'frustration_threshold': 0.90,
+                'drowsiness_threshold': 3,
+                'pause_time_minutes': 45
+            }
+        elif self.user_cluster == "Lector Constante":
+            return {
+                'distraction_threshold': 3,
+                'frustration_threshold': 0.88,
+                'drowsiness_threshold': 2,
+                'pause_time_minutes': 40
+            }
+        elif self.user_cluster == "Disperso Visual":
+            return {
+                'distraction_threshold': 2,
+                'frustration_threshold': 0.80,
+                'drowsiness_threshold': 2,
+                'pause_time_minutes': 30
+            }
+        elif self.user_cluster == "Fatigado Visual":
+            return {
+                'distraction_threshold': 3,
+                'frustration_threshold': 0.85,
+                'drowsiness_threshold': 1,
+                'pause_time_minutes': 25
+            }
+        else:
+            return {
+                'distraction_threshold': 3,
+                'frustration_threshold': 0.90,
+                'drowsiness_threshold': 2,
+                'pause_time_minutes': 40
+            }
