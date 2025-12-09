@@ -75,40 +75,61 @@ class EmotionAnalyzerService:
     
     @staticmethod
     def _analyze_and_intervene(state: EmotionState) -> Optional[Intervention]:
+        # COOLDOWN GLOBAL: No enviar ninguna intervención si ya enviamos una hace menos de 3 minutos
+        last_any_intervention = max(
+            (t for t in state.last_intervention_time.values() if t is not None),
+            default=None
+        )
+        if last_any_intervention:
+            seconds_since_last = (datetime.now() - last_any_intervention).total_seconds()
+            if seconds_since_last < 180:  # 3 minutos = 180 segundos
+                return None
+        
+        # Periodo de gracia: solo verificar excepción crítica
         if state.is_in_grace_period():
             grace_check = EmotionAnalyzerService._check_grace_period_exception(state)
             if grace_check:
                 return grace_check
             return None
         
+        # Detectar eventos sostenidos (actualizar contadores internos)
         EmotionAnalyzerService._detect_sustained_events(state)
         
+        # Verificar límite de tiempo (40 minutos)
         if state.get_elapsed_minutes() >= 40:
-            if state.can_send_intervention("pause", 999):
+            if state.can_send_intervention("pause", 10):  # Cooldown de 10 minutos para pausas
                 state.record_intervention("pause")
                 return EmotionAnalyzerService._create_intervention(
                     state, "pause_suggestion", 
                     "Han pasado 40 minutos. Te sugerimos tomar un descanso.",
-                    "activity_duration"
+                    "activity_duration",
+                    metric_value=state.get_elapsed_minutes(),
+                    confidence=1.0
                 )
         
+        # Verificar límite de intervenciones (3 en 10 minutos)
         if state.count_total_interventions_in_window(10) >= 3:
-            if state.can_send_intervention("pause", 999):
+            if state.can_send_intervention("pause", 10):  # Cooldown de 10 minutos para pausas
                 state.record_intervention("pause")
                 return EmotionAnalyzerService._create_intervention(
                     state, "pause_suggestion",
                     "Has recibido múltiples intervenciones. Te sugerimos tomar un descanso.",
-                    "intervention_limit"
+                    "intervention_limit",
+                    metric_value=state.count_total_interventions_in_window(10),
+                    confidence=0.95
                 )
         
+        # PRIORIDAD 1: Frustración (video/texto de instrucciones o pausa si persiste)
         frustration_intervention = EmotionAnalyzerService._check_frustration(state)
         if frustration_intervention:
             return frustration_intervention
         
+        # PRIORIDAD 2: Distracción (vibración o pausa si persiste)
         distraction_intervention = EmotionAnalyzerService._check_distraction(state)
         if distraction_intervention:
             return distraction_intervention
         
+        # PRIORIDAD 3: Somnolencia (vibración o pausa si persiste)
         drowsiness_intervention = EmotionAnalyzerService._check_drowsiness(state)
         if drowsiness_intervention:
             return drowsiness_intervention
@@ -122,12 +143,14 @@ class EmotionAnalyzerService:
         
         no_face_count = sum(1 for f in state.frames if not f.face_detected)
         if no_face_count == len(state.frames):
-            if state.can_send_intervention("vibration", 999):
+            if state.can_send_intervention("vibration", 2):  # Cooldown de 2 minutos para vibraciones
                 state.record_intervention("vibration")
                 return EmotionAnalyzerService._create_intervention(
                     state, "vibration_only",
                     None,
-                    "camera_setup"
+                    "camera_setup",
+                    metric_value=no_face_count / len(state.frames),
+                    confidence=1.0
                 )
         return None
     
@@ -138,6 +161,7 @@ class EmotionAnalyzerService:
         
         recent_frames = list(state.frames)[-15:]
         
+        # Detectar distracción sostenida (15 frames seguidos sin mirar pantalla)
         not_looking_consecutive = 0
         for frame in recent_frames:
             if not frame.looking_screen and frame.face_detected:
@@ -147,6 +171,7 @@ class EmotionAnalyzerService:
                     state.add_distraction_event()
                 not_looking_consecutive = 0
         
+        # Detectar somnolencia sostenida (25 frames seguidos con EAR bajo)
         low_ear_consecutive = 0
         for frame in recent_frames:
             if frame.ear < 0.25 and frame.face_detected:
@@ -156,15 +181,13 @@ class EmotionAnalyzerService:
                     state.add_drowsiness_event()
                 low_ear_consecutive = 0
         
+        # Detectar frustración sostenida (100 frames seguidos de Angry)
         angry_consecutive = 0
-        angry_sum = 0.0
         for frame in list(state.frames)[-100:]:
             if frame.emotion == "Angry" and frame.confidence > 0.75:
                 angry_consecutive += 1
-                angry_sum += frame.confidence
             else:
                 angry_consecutive = 0
-                angry_sum = 0.0
         
         if angry_consecutive >= 100:
             if state.frustration_start is None:
@@ -174,6 +197,15 @@ class EmotionAnalyzerService:
     
     @staticmethod
     def _check_frustration(state: EmotionState) -> Optional[Intervention]:
+        """
+        Jerarquía de frustración:
+        1. Frustración extrema (angry_avg > 0.90) → Pausa
+        2. Frustración persistente después de ayuda → Pausa
+        3. Frustración alta + distracción → Video
+        4. Frustración alta → Video con vibración
+        5. Frustración moderada sin ayuda previa → Video
+        6. Frustración moderada con video previo → Texto
+        """
         if state.frustration_start is None:
             return None
         
@@ -182,115 +214,166 @@ class EmotionAnalyzerService:
             return None
         
         recent_frames = list(state.frames)[-50:]
-        angry_avg = sum(f.confidence for f in recent_frames if f.emotion == "Angry") / max(1, len(recent_frames))
+        angry_frames = [f for f in recent_frames if f.emotion == "Angry"]
+        angry_avg = sum(f.confidence for f in angry_frames) / max(1, len(recent_frames))
+        angry_confidence = sum(f.confidence for f in angry_frames) / max(1, len(angry_frames)) if angry_frames else 0.0
         
+        # 1. FRUSTRACIÓN EXTREMA → Pausa inmediata
         if angry_avg > 0.90:
-            if state.can_send_intervention("pause", 999):
+            if state.can_send_intervention("pause", 10):  # Cooldown de 10 minutos para pausas
                 state.record_intervention("pause")
                 return EmotionAnalyzerService._create_intervention(
                     state, "pause_suggestion",
                     "Detectamos alta frustración. Te sugerimos tomar un descanso.",
-                    "extreme_frustration"
+                    "extreme_frustration",
+                    metric_value=angry_avg,
+                    confidence=angry_confidence
                 )
         
-        if state.intervention_count["video"] + state.intervention_count["text"] >= 2:
-            if state.can_send_intervention("pause", 999):
+        # 2. FRUSTRACIÓN PERSISTENTE después de 2 ayudas → Pausa
+        elif state.intervention_count["video"] + state.intervention_count["text"] >= 2:
+            if state.can_send_intervention("pause", 10):  # Cooldown de 10 minutos para pausas
                 state.record_intervention("pause")
                 return EmotionAnalyzerService._create_intervention(
                     state, "pause_suggestion",
                     "Has recibido ayuda pero continúas frustrado. Te sugerimos un descanso.",
-                    "persistent_frustration"
+                    "persistent_frustration",
+                    metric_value=angry_avg,
+                    confidence=angry_confidence
                 )
         
-        distraction_count_recent = state.count_recent_distractions(3)
-        if distraction_count_recent >= 4:
-            if state.can_send_intervention("video", 5):
+        # 3. FRUSTRACIÓN ALTA + DISTRACCIÓN → Video
+        elif state.count_recent_distractions(3) >= 4:
+            if state.can_send_intervention("video", 5):  # Cooldown de 5 minutos para videos
                 state.record_intervention("video")
                 return EmotionAnalyzerService._create_intervention(
                     state, "video_instruction",
                     "Parece que tienes dificultades. Aquí hay un video de ayuda.",
                     "frustration_with_distraction",
-                    video_url="https://res.cloudinary.com/doeofn1nd/video/upload/v1752085607/samples/elephants.mp4"
+                    video_url="https://res.cloudinary.com/doeofn1nd/video/upload/v1752085607/samples/elephants.mp4",
+                    metric_value=angry_avg,
+                    confidence=angry_confidence
                 )
         
-        if angry_avg > 0.85:
-            if state.can_send_intervention("video", 5):
+        # 4. FRUSTRACIÓN ALTA → Video con vibración
+        elif angry_avg > 0.85:
+            if state.can_send_intervention("video", 5):  # Cooldown de 5 minutos para videos
                 state.record_intervention("video")
                 return EmotionAnalyzerService._create_intervention(
                     state, "video_instruction",
                     "Detectamos frustración. Te compartimos un video instructivo.",
                     "high_frustration",
                     video_url="https://res.cloudinary.com/doeofn1nd/video/upload/v1752085607/samples/elephants.mp4",
-                    vibration=True
+                    vibration=True,
+                    metric_value=angry_avg,
+                    confidence=angry_confidence
                 )
         
-        if state.intervention_count["video"] == 0:
-            if state.can_send_intervention("video", 5):
+        # 5. FRUSTRACIÓN MODERADA sin video previo → Video
+        elif state.intervention_count["video"] == 0:
+            if state.can_send_intervention("video", 5):  # Cooldown de 5 minutos para videos
                 state.record_intervention("video")
                 return EmotionAnalyzerService._create_intervention(
                     state, "video_instruction",
                     "Aquí tienes un video que puede ayudarte.",
                     "frustration",
-                    video_url="https://res.cloudinary.com/doeofn1nd/video/upload/v1752085607/samples/elephants.mp4"
+                    video_url="https://res.cloudinary.com/doeofn1nd/video/upload/v1752085607/samples/elephants.mp4",
+                    metric_value=angry_avg,
+                    confidence=angry_confidence
                 )
+        
+        # 6. FRUSTRACIÓN MODERADA con video previo → Texto
         elif state.intervention_count["text"] == 0:
-            if state.can_send_intervention("text", 5):
+            if state.can_send_intervention("text", 5):  # Cooldown de 5 minutos para textos
                 state.record_intervention("text")
                 return EmotionAnalyzerService._create_intervention(
                     state, "text_instruction",
                     "Recuerda seguir las instrucciones paso a paso. No te rindas.",
-                    "frustration"
+                    "frustration",
+                    metric_value=angry_avg,
+                    confidence=angry_confidence
                 )
         
         return None
     
     @staticmethod
     def _check_distraction(state: EmotionState) -> Optional[Intervention]:
+        """
+        Jerarquía de distracción:
+        1. Distracción persistente después de 3 vibraciones → Pausa
+        2. Distracción frecuente (3+ eventos en 2 minutos) → Vibración
+        """
         distraction_count_2min = state.count_recent_distractions(2)
         distraction_count_3min = state.count_recent_distractions(3)
         
-        if distraction_count_3min >= 5:
-            if state.intervention_count["vibration"] >= 3:
-                if state.can_send_intervention("pause", 999):
-                    state.record_intervention("pause")
-                    return EmotionAnalyzerService._create_intervention(
-                        state, "pause_suggestion",
-                        "Detectamos distracciones frecuentes. Te sugerimos un descanso.",
-                        "persistent_distraction"
-                    )
+        # Calcular métrica de distracción
+        recent_frames = list(state.frames)[-60:]  # Últimos 60 frames (~2 segundos a 30fps)
+        not_looking_count = sum(1 for f in recent_frames if not f.looking_screen and f.face_detected)
+        distraction_metric = not_looking_count / max(1, len(recent_frames))
         
-        if distraction_count_2min >= 3:
-            if state.can_send_intervention("vibration", 2):
+        # 1. DISTRACCIÓN PERSISTENTE después de 3 vibraciones → Pausa
+        if distraction_count_3min >= 5 and state.intervention_count["vibration"] >= 3:
+            if state.can_send_intervention("pause", 10):  # Cooldown de 10 minutos para pausas
+                state.record_intervention("pause")
+                return EmotionAnalyzerService._create_intervention(
+                    state, "pause_suggestion",
+                    "Detectamos distracciones frecuentes. Te sugerimos un descanso.",
+                    "persistent_distraction",
+                    metric_value=distraction_metric,
+                    confidence=0.90
+                )
+        
+        # 2. DISTRACCIÓN FRECUENTE → Vibración
+        elif distraction_count_2min >= 3:
+            if state.can_send_intervention("vibration", 2):  # Cooldown de 2 minutos para vibraciones
                 state.record_intervention("vibration")
                 return EmotionAnalyzerService._create_intervention(
                     state, "vibration_only",
                     None,
-                    "distraction"
+                    "distraction",
+                    metric_value=distraction_metric,
+                    confidence=0.85
                 )
         
         return None
     
     @staticmethod
     def _check_drowsiness(state: EmotionState) -> Optional[Intervention]:
+        """
+        Jerarquía de somnolencia:
+        1. Somnolencia persistente después de 3 vibraciones → Pausa
+        2. Somnolencia frecuente (2+ eventos en 2 minutos) → Vibración
+        """
         drowsiness_count_2min = state.count_recent_drowsiness(2)
         
-        if drowsiness_count_2min >= 3:
-            if state.intervention_count["vibration"] >= 3:
-                if state.can_send_intervention("pause", 999):
-                    state.record_intervention("pause")
-                    return EmotionAnalyzerService._create_intervention(
-                        state, "pause_suggestion",
-                        "Detectamos somnolencia persistente. Te sugerimos descansar.",
-                        "persistent_drowsiness"
-                    )
+        # Calcular métrica de somnolencia
+        recent_frames = list(state.frames)[-60:]  # Últimos 60 frames
+        ear_values = [f.ear for f in recent_frames if f.ear > 0 and f.face_detected]
+        avg_ear = sum(ear_values) / len(ear_values) if ear_values else 0.0
+        drowsiness_metric = 1.0 - min(avg_ear / 0.3, 1.0)  # Normalizado: EAR bajo = métrica alta
         
-        if drowsiness_count_2min >= 2:
-            if state.can_send_intervention("vibration", 2):
+        # 1. SOMNOLENCIA PERSISTENTE después de 3 vibraciones → Pausa
+        if drowsiness_count_2min >= 3 and state.intervention_count["vibration"] >= 3:
+            if state.can_send_intervention("pause", 10):  # Cooldown de 10 minutos para pausas
+                state.record_intervention("pause")
+                return EmotionAnalyzerService._create_intervention(
+                    state, "pause_suggestion",
+                    "Detectamos somnolencia persistente. Te sugerimos descansar.",
+                    "persistent_drowsiness",
+                    metric_value=drowsiness_metric,
+                    confidence=0.90
+                )
+        
+        # 2. SOMNOLENCIA FRECUENTE → Vibración
+        elif drowsiness_count_2min >= 2:
+            if state.can_send_intervention("vibration", 2):  # Cooldown de 2 minutos para vibraciones
                 state.record_intervention("vibration")
                 return EmotionAnalyzerService._create_intervention(
                     state, "vibration_only",
                     None,
-                    "drowsiness"
+                    "drowsiness",
+                    metric_value=drowsiness_metric,
+                    confidence=0.85
                 )
         
         return None
@@ -302,7 +385,9 @@ class EmotionAnalyzerService:
         display_text: Optional[str],
         metric_name: str,
         video_url: Optional[str] = None,
-        vibration: bool = False
+        vibration: bool = False,
+        metric_value: float = 0.0,
+        confidence: float = 0.0
     ) -> Intervention:
         packet_id = f"int_{datetime.now().timestamp()}"
         
@@ -320,8 +405,8 @@ class EmotionAnalyzerService:
             display_text=display_text,
             vibration_enabled=vibration,
             metric_name=metric_name,
-            metric_value=0.0,
-            confidence=0.0,
+            metric_value=metric_value,
+            confidence=confidence,
             duration_ms=5000
         )
     

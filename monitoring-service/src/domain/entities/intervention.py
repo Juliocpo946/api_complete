@@ -21,7 +21,7 @@ class Intervention:
         return {
             "packet_id": self.packet_id,
             "timestamp": self.timestamp,
-            "type": self.intervention_type,
+            "type": "intervention",
             "triggers": {
                 "video_url": self.video_url,
                 "display_text": self.display_text,
